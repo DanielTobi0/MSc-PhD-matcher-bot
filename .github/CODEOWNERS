@@ -1,0 +1,5 @@
+# Changes to anything that runs with secrets or defines access need owner review.
+/.github/            @bumie-e
+/agents/             @bumie-e
+/supabase/           @bumie-e
+/config/             @bumie-e

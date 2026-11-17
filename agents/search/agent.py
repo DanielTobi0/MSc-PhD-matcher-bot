@@ -2,15 +2,11 @@
 
 Flow:
   1. Pull every onboarded user's keywords, build one deduplicated global set.
-  2. Scrape every keyword-based global source (FindAPhD, FindAMasters,
-     PhDportal, UniversityPositions, EURAXESS, Erasmus Mundus, ProFellow,
-     DAAD, ScholarshipDB, Fulbright) for those keywords, plus a global
+  2. Scrape every keyword-based global source (PhDportal, UniversityPositions, EURAXESS, Erasmus Mundus, ProFellow,
+     DAAD, Fulbright) for those keywords, plus a global
      Tavily catch-all pass.
   3. Users who named specific target_universities also get a per-university Tavily search
-     scoped to their own keywords/field of study. Every user also gets a
-     ResearchGate professor-profile crawl (Phase 5): discover candidate
-     profiles via Tavily, then Playwright-check each one for hiring
-     signals, caching visited profiles in lab_visits.
+     scoped to their own keywords/field of study.
   4. Drop listings whose source_url is already in `opportunities`.
   5. Ask the owner's Groq model to normalize each new listing into the
      opportunities schema (shared pool; personalised scoring is per-user, in
@@ -98,10 +94,6 @@ def structure_listing(listing: dict, llm: LLM) -> dict | None:
 
     structured["source_url"] = listing["source_url"]
     structured["source_name"] = listing["source_name"]
-    if listing["source_name"] == "researchgate":
-        # ResearchGate profiles are individual academics, never funded MSc
-        # programs, so don't let a borderline read mislabel this as msc.
-        structured["type"] = "phd"
     return structured
 
 
@@ -119,7 +111,7 @@ def run() -> list[str]:
         tavily_listings = tools.tavily_search_tool(keywords)
         print(f"Tavily catch-all: {len(tavily_listings)} raw listings.")
         raw_listings.extend(tavily_listings)
-    except RuntimeError as exc:
+    except Exception as exc:  # noqa: BLE001 — quota/network errors shouldn't kill the run
         print(f"Skipping Tavily catch-all: {err(exc)}")
 
     for row in user_rows:
@@ -135,14 +127,6 @@ def run() -> list[str]:
                     f"{len(university_listings)} raw listings."
                 )
                 raw_listings.extend(university_listings)
-
-        researchgate_listings = tools.scrape_researchgate_for_user(
-            row["user_id"], row["field_of_study"], row["keywords"]
-        )
-        if researchgate_listings:
-            n_rg = len(researchgate_listings)
-            print(f"ResearchGate (user {uid(row['user_id'])}): {n_rg} hiring signal(s).")
-            raw_listings.extend(researchgate_listings)
 
     deduped_by_url = {listing["source_url"]: listing for listing in raw_listings}.values()
 

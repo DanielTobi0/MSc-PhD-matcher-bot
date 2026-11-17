@@ -21,9 +21,6 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
-      - name: Install Playwright Chromium
-        run: uv run playwright install --with-deps chromium
-
       - name: Run search agent
         id: search
         env:
@@ -31,13 +28,15 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-          COOKIE_ENCRYPTION_KEY: ${{ secrets.COOKIE_ENCRYPTION_KEY }}
         run: |
           uv run python -m agents.search.agent 2> >(tee search_stderr.log >&2)
-          grep NEW_OPPORTUNITY_IDS search_stderr.log >> "$GITHUB_OUTPUT" || echo "NEW_OPPORTUNITY_IDS=" >> "$GITHUB_OUTPUT"
+          # Accept only a well-formed id list; scraped text echoed to stderr cannot inject here.
+          ids=$(grep -E '^NEW_OPPORTUNITY_IDS=[0-9a-f,-]*$' search_stderr.log | tail -n 1 || true)
+          echo "${ids:-NEW_OPPORTUNITY_IDS=}" >> "$GITHUB_OUTPUT"
 
       - name: Dispatch match.yml for new opportunities
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPP_IDS: ${{ steps.search.outputs.NEW_OPPORTUNITY_IDS }}
         run: |
-          uv run python -m agents.orchestrator --opp-ids "${{ steps.search.outputs.NEW_OPPORTUNITY_IDS }}"
+          uv run python -m agents.orchestrator --opp-ids "$OPP_IDS"

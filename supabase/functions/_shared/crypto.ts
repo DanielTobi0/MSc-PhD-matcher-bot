@@ -14,29 +14,38 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-export async function encryptSecret(plaintext: string): Promise<string> {
+const V2 = "v2:";
+
+// With `aad` (the owner's user id) the value is bound to that user: copying the ciphertext
+// to another row makes decryption fail. Output is then "v2:" + base64.
+export async function encryptSecret(plaintext: string, aad?: string): Promise<string> {
   const keyBytes = base64ToBytes(COOKIE_ENCRYPTION_KEY);
   if (keyBytes.length !== 32) {
     throw new Error("COOKIE_ENCRYPTION_KEY must decode to 32 bytes for AES-256");
   }
   const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt"]);
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = new Uint8Array(
-    await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(plaintext)),
-  );
+  const params: AesGcmParams = { name: "AES-GCM", iv };
+  if (aad) params.additionalData = new TextEncoder().encode(aad);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(params, key, new TextEncoder().encode(plaintext)));
   const combined = new Uint8Array(iv.length + ciphertext.length);
   combined.set(iv, 0);
   combined.set(ciphertext, iv.length);
-  return bytesToBase64(combined);
+  const body = bytesToBase64(combined);
+  return aad ? V2 + body : body;
 }
 
-export async function decryptSecret(token: string): Promise<string> {
+export async function decryptSecret(token: string, aad?: string): Promise<string> {
   const keyBytes = base64ToBytes(COOKIE_ENCRYPTION_KEY);
   if (keyBytes.length !== 32) {
     throw new Error("COOKIE_ENCRYPTION_KEY must decode to 32 bytes for AES-256");
   }
   const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["decrypt"]);
-  const raw = base64ToBytes(token);
-  const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: raw.slice(0, 12) }, key, raw.slice(12));
+  const isV2 = token.startsWith(V2);
+  if (isV2 && !aad) throw new Error("aad is required for v2 values");
+  const raw = base64ToBytes(isV2 ? token.slice(V2.length) : token);
+  const params: AesGcmParams = { name: "AES-GCM", iv: raw.slice(0, 12) };
+  if (isV2) params.additionalData = new TextEncoder().encode(aad);
+  const plaintext = await crypto.subtle.decrypt(params, key, raw.slice(12));
   return new TextDecoder().decode(plaintext);
 }

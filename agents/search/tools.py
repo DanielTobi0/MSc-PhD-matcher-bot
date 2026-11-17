@@ -1,8 +1,6 @@
-from datetime import datetime, timedelta, timezone
-
 from agents.db import get_client
 from agents.redact import err, uid
-from agents.search.scrapers import researchgate, tavily_search, university_search
+from agents.search.scrapers import tavily_search, university_search
 from agents.search.scrapers.base import RawListing
 from agents.search.scrapers.registry import GLOBAL_KEYWORD_SCRAPERS
 from config import settings
@@ -96,56 +94,6 @@ def scrape_universities_for_user(
     return listings
 
 
-def scrape_researchgate_for_user(user_id: str, field_of_study: str | None, keywords: list[str]) -> list[dict]:
-    """Discover candidate ResearchGate professor profiles for this user's
-    field/keywords, skip any visited within the cooldown window, crawl the
-    rest, cache the resulting status in lab_visits, and return listings
-    for anyone found to be hiring."""
-    db = get_client()
-
-    try:
-        candidate_urls = researchgate.discover_profiles(
-            field_of_study, keywords, max_results=settings.LAB_DISCOVERY_MAX_LABS_PER_USER_PER_RUN
-        )
-    except Exception as exc:  # noqa: BLE001 — Tavily hiccup shouldn't kill the run
-        print(f"[researchgate] profile discovery failed for user {uid(user_id)}: {err(exc)}")
-        return []
-
-    if not candidate_urls:
-        return []
-
-    cooldown = timedelta(days=settings.LAB_DISCOVERY_REVISIT_COOLDOWN_DAYS)
-    cutoff = (datetime.now(timezone.utc) - cooldown).isoformat()
-    resp = (
-        db.table("lab_visits")
-        .select("lab_url, visited_at")
-        .eq("user_id", user_id)
-        .in_("lab_url", candidate_urls)
-        .gte("visited_at", cutoff)
-        .execute()
-    )
-    recently_visited = {row["lab_url"] for row in resp.data}
-    to_visit = [url for url in candidate_urls if url not in recently_visited]
-    if not to_visit:
-        return []
-
-    try:
-        results = researchgate.search_for_profiles(to_visit)
-    except Exception as exc:  # noqa: BLE001 — Playwright/browser failure shouldn't kill the run
-        print(f"[researchgate] crawl failed for user {uid(user_id)}: {err(exc)}")
-        return []
-
-    now = datetime.now(timezone.utc).isoformat()
-    visit_rows = [
-        {"user_id": user_id, "lab_url": url, "status": status, "visited_at": now}
-        for url, status, _ in results
-    ]
-    if visit_rows:
-        db.table("lab_visits").upsert(visit_rows, on_conflict="user_id,lab_url").execute()
-
-    return _listings_to_dicts([listing for _, _, listing in results if listing])
-
-
 def check_existing(source_urls: list[str]) -> set[str]:
     """Return the subset of source_urls already present in opportunities."""
     if not source_urls:
@@ -186,9 +134,9 @@ TOOL_SCHEMAS = [
         "function": {
             "name": "scrape_source",
             "description": (
-                "Search one named source (findaphd, findamasters, phdportal, "
+                "Search one named source (phdportal, "
                 "universitypositions, euraxess, erasmus_mundus, profellow, "
-                "daad, scholarshipdb, fulbright) for listings matching the given keywords."
+                "daad, fulbright) for listings matching the given keywords."
             ),
             "parameters": {
                 "type": "object",

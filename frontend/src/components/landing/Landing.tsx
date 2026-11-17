@@ -6,14 +6,10 @@ const SOURCES = [
   "DAAD",
   "Erasmus Mundus",
   "EURAXESS",
-  "FindAPhD",
-  "FindAMasters",
   "PhDportal",
   "Fulbright",
-  "ScholarshipDB",
   "ProFellow",
   "University job boards",
-  "ResearchGate",
 ];
 
 const STEPS = [

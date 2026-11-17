@@ -29,16 +29,33 @@ def _get_key() -> bytes:
     return key
 
 
-def encrypt_cookie(plaintext: str) -> str:
+V2_PREFIX = "v2:"
+
+
+def encrypt_cookie(plaintext: str, aad: str | None = None) -> str:
+    """With `aad` (the owner's user id) the value is bound to that user and cannot be
+    copied to another row. Output is then "v2:" + base64; without it, the legacy format."""
     key = _get_key()
     iv = os.urandom(IV_LENGTH)
-    ciphertext = AESGCM(key).encrypt(iv, plaintext.encode("utf-8"), None)
-    return base64.b64encode(iv + ciphertext).decode("ascii")
+    ciphertext = AESGCM(key).encrypt(iv, plaintext.encode("utf-8"), aad.encode() if aad else None)
+    body = base64.b64encode(iv + ciphertext).decode("ascii")
+    return V2_PREFIX + body if aad else body
 
 
-def decrypt_cookie(token: str) -> str:
+def is_legacy(token: str) -> bool:
+    return not token.startswith(V2_PREFIX)
+
+
+def decrypt_cookie(token: str, aad: str | None = None) -> str:
+    """v2 values require the matching `aad`; legacy (unprefixed) values are still readable."""
     key = _get_key()
-    raw = base64.b64decode(token)
+    if token.startswith(V2_PREFIX):
+        if not aad:
+            raise ValueError("aad is required for v2 values")
+        raw = base64.b64decode(token[len(V2_PREFIX):])
+        associated = aad.encode()
+    else:
+        raw = base64.b64decode(token)
+        associated = None
     iv, ciphertext = raw[:IV_LENGTH], raw[IV_LENGTH:]
-    plaintext = AESGCM(key).decrypt(iv, ciphertext, None)
-    return plaintext.decode("utf-8")
+    return AESGCM(key).decrypt(iv, ciphertext, associated).decode("utf-8")

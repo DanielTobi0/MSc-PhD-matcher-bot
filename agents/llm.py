@@ -215,7 +215,13 @@ def get_user_llm(user_id: str) -> LLM:
     row = resp.data[0]
     if row["status"] != "valid":
         raise LLMKeyMissing(row.get("status_message") or "Your AI key was rejected. Replace it in Settings.")
-    return LLM(row["provider"], crypto.decrypt_cookie(row["key_enc"]), row["model"])
+    api_key = crypto.decrypt_cookie(row["key_enc"], aad=user_id)
+    if crypto.is_legacy(row["key_enc"]):
+        # Upgrade old rows to the user-bound format the first time they are used.
+        db.table("user_llm_keys").update({"key_enc": crypto.encrypt_cookie(api_key, aad=user_id)}).eq(
+            "user_id", user_id
+        ).execute()
+    return LLM(row["provider"], api_key, row["model"])
 
 
 def mark_key_status(user_id: str, status: str, message: str) -> None:

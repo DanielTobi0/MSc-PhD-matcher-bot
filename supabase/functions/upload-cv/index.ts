@@ -14,6 +14,8 @@ const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const GITHUB_PAT = Deno.env.get("GITHUB_PAT")!;
 const GITHUB_REPO = Deno.env.get("GITHUB_REPO")!; // "owner/repo"
 
+const SAFE_STORAGE_PATH = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9._ ()-]{1,150}\.pdf$/i;
+
 Deno.serve(async (req) => {
   const corsResponse = handleCors(req);
   if (corsResponse) return corsResponse;
@@ -39,17 +41,22 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: "Invalid session" }), { status: 401, headers: corsHeaders });
   }
 
-  const { storage_path, filename } = await req.json();
+  const body = await req.json().catch(() => null);
+  const storage_path = body?.storage_path;
+  const rawFilename = body?.filename;
   if (!storage_path || typeof storage_path !== "string") {
     return new Response(JSON.stringify({ error: "storage_path is required" }), {
       status: 400,
       headers: corsHeaders,
     });
   }
+  const filename = typeof rawFilename === "string" ? rawFilename.slice(0, 150) : undefined;
 
-  // storage_path must live under the caller's own folder — the bucket's RLS
-  // policies already enforce this for the upload itself, but double-check
-  // here since this function runs with the service role.
+  // storage_path must be exactly "<own uuid>/<plain file name>.pdf". No "..", no nested
+  // folders: this function and the parser run with the service role.
+  if (!SAFE_STORAGE_PATH.test(storage_path) || storage_path.includes("..")) {
+    return new Response(JSON.stringify({ error: "Invalid storage_path" }), { status: 400, headers: corsHeaders });
+  }
   if (!storage_path.startsWith(`${userData.user.id}/`)) {
     return new Response(JSON.stringify({ error: "storage_path must be under your own user folder" }), {
       status: 403,

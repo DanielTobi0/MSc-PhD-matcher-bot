@@ -31,6 +31,4 @@ INVALIDATE_MIN_VOTES = 2
 DEFAULT_SEARCH_KEYWORDS = ["PhD position", "MSc scholarship", "fully funded PhD", "research assistantship"]
 
 # Research lab discovery rate limiting
-LAB_DISCOVERY_MAX_LABS_PER_USER_PER_RUN = 20
-LAB_DISCOVERY_REVISIT_COOLDOWN_DAYS = 7
 

@@ -33,3 +33,25 @@ def test_decrypt_rejects_tampered_ciphertext():
 
     with pytest.raises(InvalidTag):
         crypto.decrypt_cookie(tampered)
+
+
+def test_v2_is_bound_to_user_id():
+    from cryptography.exceptions import InvalidTag
+
+    from agents import crypto
+
+    token = crypto.encrypt_cookie("sk-fake", aad="user-a")
+    assert token.startswith("v2:") and not crypto.is_legacy(token)
+    assert crypto.decrypt_cookie(token, aad="user-a") == "sk-fake"
+    with pytest.raises(InvalidTag):
+        crypto.decrypt_cookie(token, aad="user-b")
+    with pytest.raises(ValueError):
+        crypto.decrypt_cookie(token)
+
+
+def test_legacy_values_still_decrypt():
+    from agents import crypto
+
+    token = crypto.encrypt_cookie("sk-old")
+    assert crypto.is_legacy(token)
+    assert crypto.decrypt_cookie(token, aad="anyone") == "sk-old"

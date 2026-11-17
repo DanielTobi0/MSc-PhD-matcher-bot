@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -184,6 +185,23 @@ export default function SettingsPage() {
     refreshCv();
   };
 
+  const [deleteText, setDeleteText] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState<string | null>(null);
+
+  const handleDeleteAccount = async () => {
+    if (deleteText !== "DELETE") return;
+    setDeleting(true);
+    const { error: delError } = await invokeFn("delete-account", { confirm: "DELETE" });
+    if (delError) {
+      setDeleting(false);
+      setDeleteMessage(delError);
+      return;
+    }
+    await supabase.auth.signOut();
+    router.replace("/");
+  };
+
   if (sessionLoading || profileLoading || keyLoading || !session) return <PageLoading />;
 
   return (
@@ -253,6 +271,18 @@ export default function SettingsPage() {
         <button onClick={handleCvUpload} disabled={!cvFile || cvUploading} className="w-full rounded-xl bg-brand py-3 text-lg font-bold text-white transition-colors hover:bg-brand-deep disabled:opacity-50 sm:w-auto sm:px-8">
           {cvUploading ? "Uploading..." : "Upload new CV"}
         </button>
+      </Card>
+
+      <Card title="Delete my account" description="Permanently removes your login, CV, matches, notes and stored AI key. This cannot be undone.">
+        <label htmlFor="delete-confirm" className={labelClass}>
+          Type DELETE to confirm
+        </label>
+        <input id="delete-confirm" value={deleteText} onChange={(e) => setDeleteText(e.target.value)} className={softInputClass} autoComplete="off" />
+        {deleteMessage && <p className="mb-3 text-base font-bold text-red-700" role="alert">{deleteMessage}</p>}
+        <button onClick={handleDeleteAccount} disabled={deleteText !== "DELETE" || deleting} className="w-full rounded-xl bg-red-700 py-3 text-lg font-bold text-white disabled:opacity-50 sm:w-auto sm:px-8">
+          {deleting ? "Deleting..." : "Delete my account"}
+        </button>
+        <p className="mt-4 text-base"><Link href="/privacy/" className="text-brand underline">Privacy</Link></p>
       </Card>
     </PageShell>
   );

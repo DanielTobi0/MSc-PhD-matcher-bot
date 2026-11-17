@@ -109,7 +109,7 @@ Deno.serve(async (req) => {
     if (!row) return json({ error: "Connect an API key first." }, 400);
     let models: string[];
     try {
-      models = await listChatModels(row.provider as Provider, await decryptSecret(row.key_enc));
+      models = await listChatModels(row.provider as Provider, await decryptSecret(row.key_enc, userId));
     } catch (e) {
       if (e instanceof KeyRejected) {
         await admin
@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
     provider,
     model,
     available_models: models,
-    key_enc: await encryptSecret(apiKey),
+    key_enc: await encryptSecret(apiKey, userId),
     status: "valid",
     status_message: null,
     validated_at: new Date().toISOString(),
