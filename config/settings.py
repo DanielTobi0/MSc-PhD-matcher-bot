@@ -8,6 +8,10 @@ GROQ_BASE_URL = os.environ.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"
 
 TAVILY_API_KEY = os.environ.get("TAVILY_API_KEY", "")
 
+# Fallback web search used when Tavily errors (quota, plan restriction, outage).
+# Optional: if unset, a Tavily failure just propagates as before.
+BRAVE_API_KEY = os.environ.get("BRAVE_API_KEY", "")
+
 COOKIE_ENCRYPTION_KEY = os.environ.get("COOKIE_ENCRYPTION_KEY", "")
 
 # The owner's Groq key only structures the shared opportunity pool. Personalised
