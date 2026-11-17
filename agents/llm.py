@@ -4,8 +4,8 @@ Two kinds of callers:
 
 * Personalised work (reading a CV, scoring matches) uses the *user's own* API
   key, loaded and decrypted by `get_user_llm(user_id)`. Supported providers are
-  Groq, OpenAI and Anthropic. Keys are only sent to their respective
-  providers for authentication.
+  Groq, OpenAI, Anthropic, Gemini and DeepSeek. Keys are only sent to their
+  respective providers for authentication.
 * The shared search agent structures scraped listings into the common
   `opportunities` pool with the project owner's Groq key (`get_owner_llm()`).
   One shared pass, not a per-user cost.

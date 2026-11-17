@@ -77,7 +77,7 @@ Credentials live only in GitHub and Supabase secrets.
 ## Bring your own AI key
 
 Browsing is free. **Personalised matching is optional** and runs on the user's own key
-(Groq, OpenAI or Anthropic), so nobody's usage is billed to the project owner.
+(Groq, OpenAI, Anthropic, Gemini or DeepSeek), so nobody's usage is billed to the project owner.
 
 1. In Settings (or onboarding) a user pastes a key. `save-llm-key` verifies it by asking
    the provider for its model list (no tokens spent), picks a default model, encrypts the
@@ -106,6 +106,16 @@ one adapter per provider. To add a provider, subclass `BaseLLMProvider` (or
 `OpenAICompatibleProvider` for a Chat Completions API), implement `complete()`, and
 register it in `PROVIDERS`. Exposing it in Settings also needs the frontend provider
 list, `save-llm-key` validation and the `user_llm_keys` provider constraint.
+
+The DeepSeek adapter uses a forced strict tool call (thinking disabled, schema inlined)
+on its beta endpoint instead of a `json_schema` response format.
+
+To smoke-test a provider with synthetic data (three billable calls, no database), set
+`GEMINI_API_KEY` or `DEEPSEEK_API_KEY` and run:
+
+```bash
+uv run --env-file .env python -m agents.check_llm --provider gemini --model gemini-3.5-flash
+```
 
 ## Getting started
 

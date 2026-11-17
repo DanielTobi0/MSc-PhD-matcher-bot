@@ -5,7 +5,7 @@ import pytest
 
 from agents.llm import LLM, LLMAuthError, LLMModelUnavailable, LLMRateLimitError, LLMUnavailableError
 from agents.llm_providers import PROVIDERS, BaseLLMProvider
-from agents.schemas import StructuredResponse
+from agents.schemas import MatchResult, Opportunity, ParsedCV, StructuredResponse
 
 
 class SampleScore(StructuredResponse):
@@ -124,6 +124,14 @@ def _mock_llm(
                 "stop_reason": finish_reason or "end_turn",
                 "content": [{"type": "text", "text": text}],
             }
+        elif provider == "deepseek":
+            body = {"choices": [{
+                "finish_reason": finish_reason or "tool_calls",
+                "message": {"role": "assistant", "content": None, "refusal": refusal, "tool_calls": [{
+                    "id": "call-result", "type": "function",
+                    "function": {"name": "SampleScore", "arguments": text},
+                }]},
+            }]}
         else:
             body = {"choices": [{
                 "finish_reason": finish_reason or "stop",
@@ -134,7 +142,7 @@ def _mock_llm(
     return _http_llm(provider, handler, model)
 
 
-@pytest.mark.parametrize("provider", ["openai", "groq"])
+@pytest.mark.parametrize("provider", ["openai", "groq", "gemini"])
 def test_openai_compatible_requests_strict_schema(provider):
     seen = {}
     result = _mock_llm(provider, seen=seen).complete_structured("system", "user", SampleScore, max_tokens=512)
@@ -160,6 +168,7 @@ def test_unusable_or_schema_invalid_output_is_skipped(provider, text):
 @pytest.mark.parametrize("provider, finish_reason", [
     ("openai", "length"), ("groq", "length"), ("openai", "content_filter"),
     ("anthropic", "max_tokens"), ("anthropic", "refusal"),
+    ("gemini", "length"), ("gemini", "content_filter"), ("deepseek", "length"), ("deepseek", "stop"),
 ])
 def test_incomplete_or_refused_output_is_skipped_even_if_json_is_valid(provider, finish_reason):
     llm = _mock_llm(provider, finish_reason=finish_reason)
@@ -261,6 +270,13 @@ def test_transient_failure_can_recover(provider, monkeypatch):
             return httpx.Response(503, json={})
         if provider == "anthropic":
             body = {"stop_reason": "end_turn", "content": [{"type": "text", "text": '{"score": 77}'}]}
+        elif provider == "deepseek":
+            body = {"choices": [{
+                "finish_reason": "tool_calls", "message": {"role": "assistant", "tool_calls": [{
+                    "id": "call-result", "type": "function",
+                    "function": {"name": "SampleScore", "arguments": '{"score": 77}'},
+                }]},
+            }]}
         else:
             body = {"choices": [{
                 "finish_reason": "stop", "message": {"role": "assistant", "content": '{"score": 77}'},
@@ -298,6 +314,8 @@ def test_malformed_provider_envelopes_do_not_crash(provider, body):
     ("openai", "gpt-5-mini", "low"), ("openai", "gpt-4.1-mini", None),
     ("groq", "openai/gpt-oss-20b", "low"), ("groq", "openai/gpt-oss-120b", "low"),
     ("groq", "llama-3.3-70b-versatile", None), ("groq", "qwen/qwen3-32b", None),
+    ("gemini", "gemini-2.5-flash", "low"), ("gemini", "gemini-3.8-flash", "low"),
+    ("gemini", "gemini-2.0-flash", None),
 ])
 def test_reasoning_options_are_model_specific(provider, model, effort):
     seen = {}
@@ -340,7 +358,77 @@ def test_http_date_retry_after_is_respected(monkeypatch):
     assert _retry_delay(headers, 0) == 15
 
 
-@pytest.mark.parametrize("provider", ["openai", "groq"])
+def test_deepseek_uses_a_forced_strict_tool_and_native_token_parameter():
+    seen = {}
+    llm = _mock_llm("deepseek", seen=seen)
+    assert llm.complete_structured("s", "u", SampleScore, max_tokens=512) == SampleScore(score=77)
+    assert "response_format" not in seen
+    assert "max_completion_tokens" not in seen
+    assert seen["max_tokens"] == 512
+    assert seen["thinking"] == {"type": "disabled"}
+    assert seen["tool_choice"] == {"type": "function", "function": {"name": "SampleScore"}}
+    function = seen["tools"][0]["function"]
+    assert function["name"] == "SampleScore"
+    assert function["strict"] is True
+    assert function["parameters"]["properties"] == SampleScore.model_json_schema()["properties"]
+
+
+@pytest.mark.parametrize("model", [MatchResult, ParsedCV, Opportunity])
+def test_deepseek_inlines_nested_schemas_without_changing_validation_models(model):
+    seen = {}
+    llm = _mock_llm("deepseek", seen=seen)
+    original = model.model_json_schema()
+    llm.complete_structured("s", "u", model)
+    parameters = seen["tools"][0]["function"]["parameters"]
+    serialized = json.dumps(parameters)
+    assert '"$ref"' not in serialized
+    assert '"$defs"' not in serialized
+    assert model.model_json_schema() == original
+    if model is MatchResult:
+        nested = parameters["properties"]["score_breakdown"]
+        assert set(nested["properties"]) == {
+            "field_alignment", "requirements_met", "experience_fit", "funding_fit", "location_fit",
+        }
+        assert nested["additionalProperties"] is False
+    elif model is ParsedCV:
+        education = parameters["properties"]["education"]["items"]
+        assert set(education["properties"]) == {"degree", "institution", "field", "year"}
+        assert {"type": "null"} in education["properties"]["field"]["anyOf"]
+
+
+@pytest.mark.parametrize("calls", [
+    [],
+    [{"id": "wrong", "type": "function", "function": {"name": "wrong_name", "arguments": '{"score": 77}'}}],
+    [
+        {"id": "one", "type": "function", "function": {"name": "SampleScore", "arguments": '{"score": 77}'}},
+        {"id": "two", "type": "function", "function": {"name": "SampleScore", "arguments": '{"score": 88}'}},
+    ],
+])
+def test_deepseek_rejects_missing_wrong_or_multiple_tool_results(calls):
+    body = {"choices": [{
+        "finish_reason": "tool_calls", "message": {"role": "assistant", "tool_calls": calls},
+    }]}
+    llm = _http_llm("deepseek", lambda _: httpx.Response(200, json=body))
+    assert llm.complete_structured("s", "u", SampleScore) is None
+
+
+@pytest.mark.parametrize("provider, endpoint", [
+    ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"),
+    ("deepseek", "https://api.deepseek.com/beta/chat/completions"),
+])
+def test_new_providers_authenticate_only_to_their_own_endpoint(provider, endpoint):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"choices": []})
+
+    assert _http_llm(provider, handler).complete_structured("s", "u", SampleScore) is None
+    assert str(requests[0].url) == endpoint
+    assert requests[0].headers["authorization"] == "Bearer test-key"
+
+
+@pytest.mark.parametrize("provider", ["openai", "groq", "gemini"])
 @pytest.mark.parametrize("error", [
     {"code": "unsupported_value", "param": "response_format.type", "message": "PRIVATE_PROVIDER_TEXT"},
     {"code": "invalid_request_error", "message": "json_schema is not supported with this model: PRIVATE"},

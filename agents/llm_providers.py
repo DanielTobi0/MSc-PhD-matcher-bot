@@ -140,6 +140,73 @@ class GroqProvider(OpenAICompatibleProvider):
         return {}
 
 
+class GeminiProvider(OpenAICompatibleProvider):
+    base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+    def request_options(self) -> dict:
+        if self.model.startswith(("gemini-2.5-", "gemini-3", "gemini-4")):
+            return {"reasoning_effort": "low"}
+        return {}
+
+
+def _inline_schema(schema: dict) -> dict:
+    """Inline local references for DeepSeek's strict tool schema parser.
+
+    Keep the original schema unchanged for shared Pydantic validation.
+    """
+    def expand(node, seen: frozenset[str] = frozenset()):
+        if isinstance(node, list):
+            return [expand(value, seen) for value in node]
+        if not isinstance(node, dict):
+            return node
+        if "$ref" in node:
+            ref = node["$ref"]
+            if not ref.startswith("#/") or ref in seen:
+                raise ValueError("DeepSeek requires non-recursive local schema references")
+            target = schema
+            for part in ref[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]
+            return expand({**target, **{k: v for k, v in node.items() if k != "$ref"}}, seen | {ref})
+        return {key: expand(value, seen) for key, value in node.items() if key != "$defs"}
+
+    return expand(schema)
+
+
+class DeepSeekProvider(OpenAICompatibleProvider):
+    # DeepSeek enforces schemas through strict tool calls on its beta endpoint.
+    base_url = "https://api.deepseek.com/beta"
+
+    def request_options(self) -> dict:
+        # Forced tool selection requires non-thinking mode.
+        return {"extra_body": {"thinking": {"type": "disabled"}}}
+
+    def token_options(self, max_tokens: int) -> dict:
+        return {"max_tokens": max_tokens}
+
+    def format_options(self, schema_name: str, schema: dict) -> dict:
+        return {
+            "tools": [{"type": "function", "function": {
+                "name": schema_name,
+                "description": "Return the requested structured result using every field in this schema.",
+                "strict": True,
+                "parameters": _inline_schema(schema),
+            }}],
+            "tool_choice": {"type": "function", "function": {"name": schema_name}},
+        }
+
+    def extract_text(self, resp, schema_name: str) -> str | None:
+        if not resp.choices:
+            return None
+        choice = resp.choices[0]
+        if choice.finish_reason != "tool_calls" or choice.message.refusal:
+            return None
+        calls = choice.message.tool_calls or []
+        if len(calls) != 1 or calls[0].type != "function" or calls[0].function.name != schema_name:
+            return None
+        arguments = calls[0].function.arguments
+        return arguments if isinstance(arguments, str) else None
+
+
 class AnthropicProvider(BaseLLMProvider):
     def complete(self, system: str, user: str, schema_name: str, schema: dict, max_tokens: int) -> str | None:
         try:
@@ -183,4 +250,6 @@ PROVIDERS: dict[str, type[BaseLLMProvider]] = {
     "openai": OpenAIProvider,
     "groq": GroqProvider,
     "anthropic": AnthropicProvider,
+    "gemini": GeminiProvider,
+    "deepseek": DeepSeekProvider,
 }
