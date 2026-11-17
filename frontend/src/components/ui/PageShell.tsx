@@ -16,6 +16,7 @@ export function PageShell({
   title,
   subtitle,
   width = "max-w-6xl",
+  actions,
   children,
 }: {
   active: string;
@@ -23,17 +24,21 @@ export function PageShell({
   title: string;
   subtitle: string;
   width?: string;
+  actions?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-white font-sans text-black">
       <header className="bg-brand text-white">
         <AppNav active={active} isAdmin={isAdmin} width={width} />
-        <div className={`mx-auto px-5 pb-8 pt-4 sm:px-6 ${width}`}>
-          <h1 className="anim-rise text-3xl font-bold sm:text-4xl">{title}</h1>
-          <p className="anim-rise mt-2 max-w-2xl text-lg text-white/90 sm:text-xl" style={{ animationDelay: "60ms" }}>
-            {subtitle}
-          </p>
+        <div className={`mx-auto flex flex-wrap items-end justify-between gap-4 px-5 pb-8 pt-4 sm:px-6 ${width}`}>
+          <div>
+            <h1 className="anim-rise text-3xl font-bold sm:text-4xl">{title}</h1>
+            <p className="anim-rise mt-2 max-w-2xl text-lg text-white/90 sm:text-xl" style={{ animationDelay: "60ms" }}>
+              {subtitle}
+            </p>
+          </div>
+          {actions && <div className="anim-rise shrink-0">{actions}</div>}
         </div>
       </header>
       <main className={`mx-auto px-5 py-8 sm:px-6 sm:py-10 ${width}`}>{children}</main>

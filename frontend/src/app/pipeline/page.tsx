@@ -11,6 +11,7 @@ import { useOpportunities } from "@/hooks/useOpportunities";
 import { useProfile } from "@/hooks/useProfile";
 import { useSession } from "@/hooks/useSession";
 import { daysUntil, shortDeadline } from "@/lib/deadline";
+import { exportOpportunitiesToCsv } from "@/lib/exportCsv";
 import type { NoteStatus, OpportunityItem } from "@/lib/types";
 
 const COLUMNS: { status: NoteStatus; label: string }[] = [
@@ -80,6 +81,16 @@ export default function PipelinePage() {
       isAdmin={profile?.is_admin}
       title="Your pipeline"
       subtitle="Everything you saved, from interested to offer. Drag cards between columns, or use the Move menu on a card."
+      actions={
+        total > 0 && (
+          <button
+            onClick={() => exportOpportunitiesToCsv(tracked, "pipeline.csv")}
+            className="rounded-xl bg-white px-5 py-2.5 text-lg font-bold text-brand-deep transition-colors hover:bg-brand-soft"
+          >
+            Export to Excel
+          </button>
+        )
+      }
     >
       {/* Phones and tablets show one column at a time. */}
       <div className="mb-5 flex gap-1 overflow-x-auto rounded-full bg-brand-soft p-1 lg:hidden" role="tablist" aria-label="Pipeline stage">

@@ -82,6 +82,8 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
   const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [focus, setFocus] = useState<Focus>("all");
   const [query, setQuery] = useState("");
+  const [universityFilter, setUniversityFilter] = useState("all");
+  const [fieldFilter, setFieldFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [scoring, setScoring] = useState<"idle" | "starting" | "started" | "failed">("idle");
   const [scoringError, setScoringError] = useState<string | null>(null);
@@ -96,6 +98,9 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
   }, [items, pool]);
 
   const matches = useMemo(() => items.filter((i) => i.match && i.match.score >= threshold && isOpen(i)), [items, threshold]);
+
+  const universities = useMemo(() => [...new Set(all.map((i) => i.opportunity.university).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b)), [all]);
+  const fields = useMemo(() => [...new Set(all.map((i) => i.opportunity.department).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b)), [all]);
   const savedCount = useMemo(() => all.filter((i) => i.user_note).length, [all]);
   const closingCount = useMemo(() => all.filter(isClosingSoon).length, [all]);
 
@@ -111,6 +116,8 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
       if (focus === "saved") l = l.filter((i) => i.user_note);
     }
     if (typeFilter !== "all") l = l.filter((i) => i.opportunity.type === typeFilter);
+    if (universityFilter !== "all") l = l.filter((i) => i.opportunity.university === universityFilter);
+    if (fieldFilter !== "all") l = l.filter((i) => i.opportunity.department === fieldFilter);
     const q = query.trim().toLowerCase();
     if (q) {
       l = l.filter((i) =>
@@ -122,7 +129,7 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
       if (sort === "deadline") return byDeadline(a, b);
       return new Date(b.opportunity.created_at).getTime() - new Date(a.opportunity.created_at).getTime();
     });
-  }, [tab, matches, all, focus, typeFilter, query, sort]);
+  }, [tab, matches, all, focus, typeFilter, universityFilter, fieldFilter, query, sort]);
 
   const closingSoon = useMemo(() => all.filter(isClosingSoon).sort(byDeadline), [all]);
   const selected = all.find((i) => i.id === selectedId) ?? null;
@@ -328,6 +335,53 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
                 />
               </div>
 
+              <div className="mb-6 flex flex-wrap items-center gap-3">
+                <div className="min-w-[12rem]">
+                  <label htmlFor="university-filter" className="sr-only">
+                    Filter by university
+                  </label>
+                  <select
+                    id="university-filter"
+                    value={universityFilter}
+                    onChange={(e) => setUniversityFilter(e.target.value)}
+                    className="w-full rounded-full border-2 border-brand-mid bg-brand-soft px-4 py-2 text-lg outline-none focus:border-brand focus:bg-white"
+                  >
+                    <option value="all">All universities</option>
+                    {universities.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="min-w-[12rem]">
+                  <label htmlFor="field-filter" className="sr-only">
+                    Filter by field
+                  </label>
+                  <select
+                    id="field-filter"
+                    value={fieldFilter}
+                    onChange={(e) => setFieldFilter(e.target.value)}
+                    className="w-full rounded-full border-2 border-brand-mid bg-brand-soft px-4 py-2 text-lg outline-none focus:border-brand focus:bg-white"
+                  >
+                    <option value="all">All fields</option>
+                    {fields.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {(universityFilter !== "all" || fieldFilter !== "all") && (
+                  <button
+                    onClick={() => { setUniversityFilter("all"); setFieldFilter("all"); }}
+                    className="text-lg font-bold text-brand underline"
+                  >
+                    Clear university/field filters
+                  </button>
+                )}
+              </div>
+
               {tab === "explore" && focus !== "all" && (
                 <p className="mb-5 flex flex-wrap items-center gap-3 text-lg">
                   Showing: <span className="rounded-full bg-brand px-3 py-1 font-bold text-white">{FOCUS_LABEL[focus]}</span>
@@ -357,7 +411,7 @@ export function DashboardView({ email, profile, items, itemsLoading, upsertNote,
                   <h3 className="text-2xl font-bold">{all.length === 0 ? "The first search is still running" : "Nothing fits these filters"}</h3>
                   <p className="mt-2 max-w-md text-lg text-black/70">{all.length === 0 ? "New openings are collected every day. Check back soon." : "Try a different search, or clear the filters."}</p>
                   {all.length > 0 && (
-                    <button onClick={() => { setFocus("all"); setTypeFilter("all"); setQuery(""); }} className="mt-6 rounded-xl bg-brand px-7 py-3 text-lg font-bold text-white transition-colors hover:bg-brand-deep">
+                    <button onClick={() => { setFocus("all"); setTypeFilter("all"); setUniversityFilter("all"); setFieldFilter("all"); setQuery(""); }} className="mt-6 rounded-xl bg-brand px-7 py-3 text-lg font-bold text-white transition-colors hover:bg-brand-deep">
                       Clear filters
                     </button>
                   )}
